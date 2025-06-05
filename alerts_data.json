@@ -148,26 +148,10 @@
       "deleted_at": null,
       "calculated": null,
       "location_oblast_uid": 28
-    },
-    {
-      "id": 119556,
-      "location_title": "Одеська область",
-      "location_type": "oblast",
-      "started_at": "2025-06-05T12:47:24.000Z",
-      "finished_at": null,
-      "updated_at": "2025-06-05T12:47:34.879Z",
-      "alert_type": "air_raid",
-      "location_oblast": "Одеська область",
-      "location_uid": "18",
-      "notes": null,
-      "country": null,
-      "deleted_at": null,
-      "calculated": null,
-      "location_oblast_uid": 18
     }
   ],
   "meta": {
-    "last_updated_at": "2025/06/05 12:57:14 +0000",
+    "last_updated_at": "2025/06/05 13:02:07 +0000",
     "type": "full"
   },
   "disclaimer": "If you use python try our official alerts_in_ua PiP package."
