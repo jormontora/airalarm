@@ -83,12 +83,25 @@ def save_alerts_data(alerts):
 
 # Перевіряємо, чи тривога по всій Україні
 def check_alert_all_ukraine(alerts):
-    oblasts = set(
-        alert["location_title"]
-        for alert in alerts
-        if alert.get("alert_type") in ("air_raid", "artillery_shelling") and alert.get("location_type") == "oblast"
+    # Беремо всі області, де є активна тривога (типи air_raid, artillery_shelling)
+    oblasts_with_alert = set(
+        a.get("location_oblast")
+        for a in alerts
+        if isinstance(a, dict)
+        and a.get("alert_type") in ("air_raid", "artillery_shelling")
+        and a.get("location_type") == "oblast"
     )
-    return set(OBLASTS).issubset(oblasts)
+    # Порівнюємо з повним списком областей
+    return set(OBLASTS).issubset(oblasts_with_alert)
+
+# Перевіряємо, чи є тривога хоча б в одній області (а не по всій країні)
+def check_alert_any_oblast(alerts):
+    return any(
+        isinstance(alert, dict)
+        and alert.get("alert_type") in ("air_raid", "artillery_shelling")
+        and alert.get("location_type") == "oblast"
+        for alert in alerts
+    )
 
 # Читаємо chat_id з файлу
 def load_chat_ids():
@@ -149,7 +162,7 @@ async def alert_watcher(bot):
                         msg = (
                             "УВАГА! Тривога по всій Україні!\n"
                             f"Тип тривоги: {alert_type}\n"
-                            f"Нотатки: {notes}"
+                            f"Примітки: {notes}"
                         )
                     else:
                         msg = "УВАГА! Тривога по всій Україні!"
@@ -223,12 +236,75 @@ async def on_log(message: types.Message):
         )
     await message.reply(msg)
 
-# Реєструємо всі хендлери для бота
+# Адмін-команда /status — показати поточний статус умов розсилки
+async def on_status(message: types.Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.reply("Недостатньо прав.")
+        return
+
+    try:
+        alerts = get_active_alerts()
+        # Якщо відповідь — словник з ключем "alerts", беремо саме його
+        if isinstance(alerts, dict) and "alerts" in alerts:
+            alerts = alerts["alerts"]
+        alerts = [a for a in alerts if isinstance(a, dict)]
+    except Exception as exc:
+        await message.reply(f"Помилка при отриманні даних з API: {exc}")
+        return
+
+    night = is_night()
+    all_ukraine = check_alert_all_ukraine(alerts)
+    any_oblast = check_alert_any_oblast(alerts)
+    # Враховуємо всі типи тривог по областях (location_type == "oblast")
+    oblast_alerts = [a for a in alerts if a.get("location_type") == "oblast"]
+    active_types = set(a.get("alert_type", "unknown") for a in oblast_alerts)
+    oblasts_with_alert = set(a.get("location_title", "") for a in oblast_alerts if a.get("alert_type") in ("air_raid", "artillery_shelling"))
+
+    msg = (
+        f"Статус на зараз:\n"
+        f"Нічний час: {'так' if night else 'ні'}\n"
+        f"Тривога хоча б в одній області: {'так' if any_oblast else 'ні'}\n"
+        f"Тривога по всій Україні (повітряна або артобстріл): {'так' if all_ukraine else 'ні'}\n"
+        f"Активні типи тривог по областям: {', '.join(active_types) if active_types else 'немає'}\n"
+        f"Області з тривогою: {', '.join(oblasts_with_alert) if oblasts_with_alert else 'немає'}"
+    )
+    await message.reply(msg)
+
+# Додаткова адмін-команда: показати, яких областей не вистачає для тривоги по всій Україні
+async def on_missing_oblasts(message: types.Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.reply("Недостатньо прав.")
+        return
+
+    try:
+        alerts = get_active_alerts()
+        if isinstance(alerts, dict) and "alerts" in alerts:
+            alerts = alerts["alerts"]
+        alerts = [a for a in alerts if isinstance(a, dict)]
+    except Exception as exc:
+        await message.reply(f"Помилка при отриманні даних з API: {exc}")
+        return
+
+    oblasts_with_alert = set(
+        a.get("location_oblast")
+        for a in alerts
+        if a.get("alert_type") in ("air_raid", "artillery_shelling") and a.get("location_type") == "oblast"
+    )
+    missing = sorted(set(OBLASTS) - oblasts_with_alert)
+    if not missing:
+        await message.reply("Тривога по всій Україні! Всі області охоплені.")
+    else:
+        await message.reply("Не вистачає тривоги в областях:\n" + ", ".join(missing))
+
+# Реєструємо всі хендлери для бота (aiogram v3+)
 def setup_handlers(dp: Dispatcher):
     dp.message.register(on_start, Command("start"))
     dp.message.register(on_stop, Command("stop"))
     dp.message.register(on_log, Command("log"))
-    dp.message.register(on_new_chat_member, lambda msg: msg.new_chat_members is not None)
+    dp.message.register(on_status, Command("status"))
+    dp.message.register(on_missing_oblasts, Command("missing"))
+    # Для aiogram v3+ фільтр на нових учасників групи:
+    dp.message.register(on_new_chat_member, lambda msg, **_: getattr(msg, "new_chat_members", None) is not None)
 
 # Запускаємо бота
 async def main():
